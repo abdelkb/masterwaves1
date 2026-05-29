@@ -359,7 +359,7 @@ function TrackPage({ orderId, onBack }) {
     }).catch(() => {});
   }, [orderId]);
 
-  useEffect(() => { load(); const t = setInterval(load, 8000); return () => clearInterval(t); }, [load]);
+  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [load]);
 
   // Init Google Maps — se déclenche quand la commande est chargée ET le div est prêt
   useEffect(() => {
@@ -432,31 +432,55 @@ function TrackPage({ orderId, onBack }) {
     return () => script.removeEventListener('load', initMap);
   }, [data?.order?.id]);
 
-  // Met à jour le marqueur livreur
+  // Met à jour le marqueur livreur avec animation fluide
   useEffect(() => {
     if (!mapReadyRef.current || !mapInstanceRef.current || !driverPos) return;
     const map = mapInstanceRef.current;
-    if (driverMarkerRef.current) {
-      driverMarkerRef.current.setPosition(driverPos);
-    } else {
+
+    const motoIcon = {
+      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+        <svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 52 52">
+          <circle cx="26" cy="26" r="24" fill="#e94560" opacity="0.15"/>
+          <circle cx="26" cy="26" r="18" fill="#e94560"/>
+          <text x="26" y="33" font-size="20" text-anchor="middle" font-family="Arial">🛵</text>
+        </svg>
+      `),
+      scaledSize: new window.google.maps.Size(52, 52),
+      anchor: new window.google.maps.Point(26, 26),
+    };
+
+    if (!driverMarkerRef.current) {
+      // Création du marqueur
       driverMarkerRef.current = new window.google.maps.Marker({
         position: driverPos,
         map,
         title: data?.order?.driver_name || 'Livreur',
-        icon: {
-          path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-          scale: 6,
-          fillColor: '#e94560',
-          fillOpacity: 1,
-          strokeColor: '#fff',
-          strokeWeight: 2,
-          rotation: 0,
-        },
+        icon: motoIcon,
+        zIndex: 10,
       });
-      new window.google.maps.InfoWindow({ content: `<div style="font-size:13px;padding:2px 6px">🛵 ${data?.order?.driver_name || 'Livreur'}</div>` })
-        .open(map, driverMarkerRef.current);
+      const iw = new window.google.maps.InfoWindow({
+        content: `<div style="font-family:sans-serif;padding:6px 10px;font-size:13px"><strong>🛵 ${data?.order?.driver_name || 'Votre livreur'}</strong><br><span style="color:#888">En route vers vous</span></div>`,
+      });
+      iw.open(map, driverMarkerRef.current);
+      driverMarkerRef.current.addListener('click', () => iw.open(map, driverMarkerRef.current));
+      map.panTo(driverPos);
+    } else {
+      // Animation fluide entre ancienne et nouvelle position
+      const from = driverMarkerRef.current.getPosition();
+      const to = new window.google.maps.LatLng(driverPos.lat, driverPos.lng);
+      const steps = 60;
+      let step = 0;
+      const animate = () => {
+        step++;
+        const t = step / steps;
+        const lat = from.lat() + (to.lat() - from.lat()) * t;
+        const lng = from.lng() + (to.lng() - from.lng()) * t;
+        driverMarkerRef.current.setPosition({ lat, lng });
+        if (step < steps) requestAnimationFrame(animate);
+        else map.panTo(to);
+      };
+      requestAnimationFrame(animate);
     }
-    map.panTo(driverPos);
   }, [driverPos]);
 
   async function cancel() {
@@ -493,6 +517,14 @@ function TrackPage({ orderId, onBack }) {
 
         {/* Bouton retour flottant */}
         <button onClick={onBack} style={{ position: 'absolute', top: 12, left: 12, background: '#fff', border: 'none', borderRadius: 12, padding: '8px 14px', fontWeight: '700', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,.15)', fontSize: 14 }}>← Retour</button>
+
+        {/* Badge En direct */}
+        {driverPos && (
+          <div style={{ position: 'absolute', top: 56, left: 12, background: '#fff', borderRadius: 20, padding: '5px 12px', fontSize: 12, fontWeight: '700', boxShadow: '0 2px 8px rgba(0,0,0,.15)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#e94560', display: 'inline-block', animation: 'pulse 1.5s ease-in-out infinite' }} />
+            En direct
+          </div>
+        )}
 
         {/* Badge statut flottant */}
         <div style={{ position: 'absolute', top: 12, right: 12, background: '#1a1a2e', color: '#fff', borderRadius: 12, padding: '8px 14px', fontWeight: '700', fontSize: 13, boxShadow: '0 2px 8px rgba(0,0,0,.2)' }}>
@@ -585,6 +617,9 @@ function TrackPage({ orderId, onBack }) {
           </div>
         )}
       </div>
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.4)} }
+      `}</style>
     </div>
   );
 }
