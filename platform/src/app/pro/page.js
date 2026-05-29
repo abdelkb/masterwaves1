@@ -923,10 +923,38 @@ function CsvImport({ restaurantId, onImported }) {
 // ─────────────────────────────────────────────
 function DeliveriesPage() {
   const [orders, setOrders] = useState([]);
+  const [gpsStatus, setGpsStatus] = useState('idle'); // idle | active | denied
+
   const load = useCallback(() => {
     api('/orders').then((d) => setOrders(d.orders.filter((o) => !['delivered', 'cancelled'].includes(o.status)))).catch(() => {});
   }, []);
   useEffect(() => { load(); const t = setInterval(load, 7000); return () => clearInterval(t); }, [load]);
+
+  // Envoi GPS automatique tant qu'il y a des livraisons actives
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const activeStatuses = ['driver_assigned', 'going_to_restaurant', 'picked_up', 'delivering'];
+    const hasActive = orders.some((o) => activeStatuses.includes(o.status));
+    if (!hasActive) return;
+
+    function sendPos() {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setGpsStatus('active');
+          api('/drivers/location', {
+            method: 'POST',
+            body: { lat: pos.coords.latitude, lng: pos.coords.longitude, heading: pos.coords.heading },
+          }).catch(() => {});
+        },
+        () => setGpsStatus('denied'),
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    }
+
+    sendPos();
+    const t = setInterval(sendPos, 6000);
+    return () => clearInterval(t);
+  }, [orders]);
 
   async function advance(order) {
     const step = DRIVER_NEXT[order.status];
@@ -945,7 +973,20 @@ function DeliveriesPage() {
 
   return (
     <div>
-      <h2>🛵 Mes livraisons ({orders.length})</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <h2 style={{ margin: 0 }}>🛵 Mes livraisons ({orders.length})</h2>
+        {gpsStatus === 'active' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f0fff8', border: '1px solid #0a7', borderRadius: 20, padding: '5px 12px', fontSize: 13, color: '#0a7', fontWeight: '700' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#0a7', display: 'inline-block' }} />
+            GPS actif
+          </div>
+        )}
+        {gpsStatus === 'denied' && (
+          <div style={{ fontSize: 12, color: '#e94560', background: '#fff0f0', border: '1px solid #e94560', borderRadius: 20, padding: '5px 12px' }}>
+            ⚠️ GPS refusé — le client ne peut pas vous suivre
+          </div>
+        )}
+      </div>
       {orders.map((o) => {
         const step = DRIVER_NEXT[o.status];
         const goingToResto = ['driver_assigned', 'going_to_restaurant'].includes(o.status);
