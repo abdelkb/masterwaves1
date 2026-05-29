@@ -13,7 +13,9 @@ export async function GET(req, { params }) {
     [id]
   );
   const products = await query(
-    'SELECT * FROM products WHERE restaurant_id = ? ORDER BY name',
+    `SELECT p.*, c.name AS category_name FROM products p
+     LEFT JOIN categories c ON c.id = p.category_id
+     WHERE p.restaurant_id = ? ORDER BY c.sort_order, c.name, p.name`,
     [id]
   );
   const hours = await query(

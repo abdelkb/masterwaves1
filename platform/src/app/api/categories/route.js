@@ -15,6 +15,17 @@ export async function GET(req) {
   return ok({ categories: rows });
 }
 
+// DELETE /api/categories?id=
+export async function DELETE(req) {
+  const auth = await requireRole(req, ['restaurant', 'admin', 'manager']);
+  if (auth.error) return err(auth.error, auth.status);
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get('id');
+  if (!id) return err('id requis');
+  await run('DELETE FROM categories WHERE id = ?', [id]);
+  return ok({ success: true });
+}
+
 // POST /api/categories  { name, sort_order, restaurant_id? }
 export async function POST(req) {
   const auth = await requireRole(req, ['restaurant', 'admin', 'manager']);

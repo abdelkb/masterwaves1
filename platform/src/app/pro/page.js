@@ -309,20 +309,33 @@ function PhoneOrderPage() {
       {products.length > 0 && (
         <>
           <h3>2. Articles</h3>
-          {products.map((p) => (
-            <div key={p.id} style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px' }}>
-              <div>
-                <span style={{ fontWeight: '600' }}>{p.name}</span>
-                <span style={{ color: '#888', marginLeft: 8, fontSize: 13 }}>{p.description}</span>
-                <span style={{ color: '#1a1a2e', fontWeight: '700', marginLeft: 8 }}>{p.price} DH</span>
+          {(() => {
+            const catMap = {};
+            for (const p of products) {
+              const key = p.category_name || 'Autres';
+              if (!catMap[key]) catMap[key] = [];
+              catMap[key].push(p);
+            }
+            return Object.entries(catMap).map(([cat, items]) => (
+              <div key={cat}>
+                <div style={{ fontWeight: '700', color: '#e94560', margin: '10px 0 6px', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>{cat}</div>
+                {items.map((p) => (
+                  <div key={p.id} style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px' }}>
+                    <div>
+                      <span style={{ fontWeight: '600' }}>{p.name}</span>
+                      <span style={{ color: '#888', marginLeft: 8, fontSize: 13 }}>{p.description}</span>
+                      <span style={{ color: '#1a1a2e', fontWeight: '700', marginLeft: 8 }}>{p.price} DH</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <button style={qtyBtn} onClick={() => dec(p.id)}>−</button>
+                      <span style={{ fontWeight: '700', minWidth: 24, textAlign: 'center' }}>{cart[p.id] || 0}</span>
+                      <button style={qtyBtn} onClick={() => inc(p.id)}>+</button>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <button style={qtyBtn} onClick={() => dec(p.id)}>−</button>
-                <span style={{ fontWeight: '700', minWidth: 24, textAlign: 'center' }}>{cart[p.id] || 0}</span>
-                <button style={qtyBtn} onClick={() => inc(p.id)}>+</button>
-              </div>
-            </div>
-          ))}
+            ));
+          })()}
           {subtotal > 0 && <p style={{ fontWeight: '700', textAlign: 'right' }}>Sous-total : {subtotal} DH</p>}
         </>
       )}
@@ -595,15 +608,73 @@ function PartnerDetail({ partner, onBack, onResetPassword }) {
       <p style={{ color: '#888', marginTop: 0 }}>📧 {partner.email}</p>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        {[['info', '⚙️ Infos'], ['products', '🍕 Produits'], ['csv', '📄 Import CSV']].map(([k, l]) => (
+        {[['info', '⚙️ Infos'], ['categories', '🗂️ Catégories'], ['products', '🍕 Produits'], ['csv', '📄 Import CSV']].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} style={{ ...btnOutline, background: tab === k ? '#1a1a2e' : '#fff', color: tab === k ? '#fff' : '#1a1a2e' }}>{l}</button>
         ))}
         <button style={{ ...btnOutline, borderColor: '#888', color: '#888' }} onClick={() => onResetPassword(partner.email)}>🔑 Réinitialiser MDP</button>
       </div>
 
-      {tab === 'info'     && resto && <RestaurantInfoForm resto={resto} onSaved={load} />}
-      {tab === 'products' && <ProductsManager restaurantId={partner.restaurant_id} products={products} categories={categories} onRefresh={load} />}
-      {tab === 'csv'      && <CsvImport restaurantId={partner.restaurant_id} onImported={load} />}
+      {tab === 'info'       && resto && <RestaurantInfoForm resto={resto} onSaved={load} />}
+      {tab === 'categories' && <CategoriesManager restaurantId={partner.restaurant_id} categories={categories} onRefresh={load} />}
+      {tab === 'products'   && <ProductsManager restaurantId={partner.restaurant_id} products={products} categories={categories} onRefresh={load} />}
+      {tab === 'csv'        && <CsvImport restaurantId={partner.restaurant_id} onImported={load} />}
+    </div>
+  );
+}
+
+// ─── Gestion catégories ───
+function CategoriesManager({ restaurantId, categories, onRefresh }) {
+  const [name, setName] = useState('');
+  const [msg, setMsg] = useState('');
+
+  const DEFAULTS = ['Entrées', 'Plats principaux', 'Pizzas', 'Burgers', 'Sandwichs', 'Salades', 'Desserts', 'Boissons', 'Extras'];
+
+  async function add(n) {
+    const catName = n || name.trim();
+    if (!catName) return;
+    try {
+      await api('/categories', { method: 'POST', body: { restaurant_id: restaurantId, name: catName, sort_order: categories.length } });
+      setName(''); setMsg(`✅ Catégorie "${catName}" ajoutée`); onRefresh();
+    } catch (e) { setMsg('❌ ' + e.message); }
+  }
+
+  async function remove(cat) {
+    if (!confirm(`Supprimer la catégorie "${cat.name}" ? Les produits liés passeront dans "Autres".`)) return;
+    try {
+      await api(`/categories?id=${cat.id}`, { method: 'DELETE' });
+      setMsg(`✅ Catégorie supprimée`); onRefresh();
+    } catch (e) { setMsg('❌ ' + e.message); }
+  }
+
+  return (
+    <div style={card}>
+      <h3 style={{ marginTop: 0 }}>🗂️ Catégories ({categories.length})</h3>
+      {msg && <div style={{ padding: 10, borderRadius: 8, background: msg.startsWith('✅') ? '#f0fff8' : '#fff0f0', color: msg.startsWith('✅') ? '#0a7' : '#e94560', marginBottom: 12 }}>{msg}</div>}
+
+      <h4 style={{ marginBottom: 8 }}>Catégories actuelles</h4>
+      {categories.length === 0 && <p style={{ color: '#888', fontSize: 14 }}>Aucune catégorie. Ajoutez-en ci-dessous.</p>}
+      {categories.map((c) => (
+        <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
+          <span style={{ fontWeight: '600' }}>{c.name}</span>
+          <button onClick={() => remove(c)} style={{ ...btnOutline, padding: '4px 10px', fontSize: 12, color: '#e94560', borderColor: '#e94560' }}>Supprimer</button>
+        </div>
+      ))}
+
+      <h4 style={{ marginTop: 20, marginBottom: 8 }}>Ajouter une catégorie</h4>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <input style={{ ...inp, margin: 0, flex: 1 }} placeholder="Nom de la catégorie" value={name} onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <button style={btn} onClick={() => add()}>Ajouter</button>
+      </div>
+
+      <div>
+        <div style={{ fontSize: 13, color: '#888', marginBottom: 8 }}>Catégories courantes (cliquer pour ajouter) :</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {DEFAULTS.filter((d) => !categories.find((c) => c.name === d)).map((d) => (
+            <button key={d} onClick={() => add(d)} style={{ ...btnOutline, padding: '5px 12px', fontSize: 13 }}>{d}</button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -708,48 +779,63 @@ function ProductsManager({ restaurantId, products, categories, onRefresh }) {
 
       {products.length === 0 && <p style={{ color: '#888' }}>Aucun produit. Ajoutez-en un ou importez un CSV.</p>}
 
-      {products.map((p) => (
-        <div key={p.id} style={{ ...card, marginBottom: 8 }}>
-          {editId === p.id ? (
-            // Mode édition
-            <div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <div><label style={lbl}>Nom</label><input style={inp} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></div>
-                <div><label style={lbl}>Prix (DH)</label><input style={inp} type="number" step="0.5" value={editForm.price} onChange={(e) => setEditForm({ ...editForm, price: e.target.value })} /></div>
-                <div style={{ gridColumn: '1/-1' }}><label style={lbl}>Description</label><input style={inp} value={editForm.description || ''} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} /></div>
-                <div>
-                  <label style={lbl}>Catégorie</label>
-                  <select style={inp} value={editForm.category_id || ''} onChange={(e) => setEditForm({ ...editForm, category_id: e.target.value || null })}>
-                    <option value="">— Sans catégorie —</option>
-                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button style={btn} onClick={() => saveEdit(p.id)}>💾 Sauvegarder</button>
-                <button style={btnOutline} onClick={() => setEditId(null)}>Annuler</button>
-              </div>
+      {(() => {
+        const catMap = {};
+        for (const p of products) {
+          const cat = categories.find((c) => c.id === p.category_id);
+          const key = cat ? cat.id : 0;
+          const label = cat ? cat.name : 'Sans catégorie';
+          if (!catMap[key]) catMap[key] = { label, items: [] };
+          catMap[key].items.push(p);
+        }
+        return Object.values(catMap).map((g) => (
+          <div key={g.label}>
+            <div style={{ fontWeight: '700', color: '#e94560', margin: '16px 0 8px', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, borderBottom: '1px solid #f0f0f0', paddingBottom: 4 }}>
+              {g.label} ({g.items.length})
             </div>
-          ) : (
-            // Mode affichage
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <div>
-                <strong>{p.name}</strong>
-                {!p.in_stock && <span style={{ marginLeft: 8, color: '#e94560', fontSize: 12, fontWeight: '700' }}>RUPTURE</span>}
-                <div style={{ color: '#666', fontSize: 14 }}>{p.description}</div>
-                <div style={{ fontWeight: '700', color: '#1a1a2e' }}>{p.price} DH</div>
+            {g.items.map((p) => (
+              <div key={p.id} style={{ ...card, marginBottom: 8 }}>
+                {editId === p.id ? (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div><label style={lbl}>Nom</label><input style={inp} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></div>
+                      <div><label style={lbl}>Prix (DH)</label><input style={inp} type="number" step="0.5" value={editForm.price} onChange={(e) => setEditForm({ ...editForm, price: e.target.value })} /></div>
+                      <div style={{ gridColumn: '1/-1' }}><label style={lbl}>Description</label><input style={inp} value={editForm.description || ''} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} /></div>
+                      <div>
+                        <label style={lbl}>Catégorie</label>
+                        <select style={inp} value={editForm.category_id || ''} onChange={(e) => setEditForm({ ...editForm, category_id: e.target.value || null })}>
+                          <option value="">— Sans catégorie —</option>
+                          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button style={btn} onClick={() => saveEdit(p.id)}>💾 Sauvegarder</button>
+                      <button style={btnOutline} onClick={() => setEditId(null)}>Annuler</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                    <div>
+                      <strong>{p.name}</strong>
+                      {!p.in_stock && <span style={{ marginLeft: 8, color: '#e94560', fontSize: 12, fontWeight: '700' }}>RUPTURE</span>}
+                      <div style={{ color: '#666', fontSize: 14 }}>{p.description}</div>
+                      <div style={{ fontWeight: '700', color: '#1a1a2e' }}>{p.price} DH</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button style={{ ...btnOutline, padding: '6px 12px', fontSize: 13 }} onClick={() => { setEditId(p.id); setEditForm({ name: p.name, price: p.price, description: p.description, category_id: p.category_id }); }}>✏️ Modifier</button>
+                      <button style={{ ...btnOutline, padding: '6px 12px', fontSize: 13, color: p.in_stock ? '#e94560' : '#0a7', borderColor: p.in_stock ? '#e94560' : '#0a7' }} onClick={() => toggleStock(p)}>
+                        {p.in_stock ? '⛔ Rupture' : '✅ Réactiver'}
+                      </button>
+                      <button style={{ ...btnOutline, padding: '6px 12px', fontSize: 13, color: '#e94560', borderColor: '#e94560' }} onClick={() => deleteProduct(p.id, p.name)}>🗑️ Suppr.</button>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button style={{ ...btnOutline, padding: '6px 12px', fontSize: 13 }} onClick={() => { setEditId(p.id); setEditForm({ name: p.name, price: p.price, description: p.description, category_id: p.category_id }); }}>✏️ Modifier</button>
-                <button style={{ ...btnOutline, padding: '6px 12px', fontSize: 13, color: p.in_stock ? '#e94560' : '#0a7', borderColor: p.in_stock ? '#e94560' : '#0a7' }} onClick={() => toggleStock(p)}>
-                  {p.in_stock ? '⛔ Rupture' : '✅ Réactiver'}
-                </button>
-                <button style={{ ...btnOutline, padding: '6px 12px', fontSize: 13, color: '#e94560', borderColor: '#e94560' }} onClick={() => deleteProduct(p.id, p.name)}>🗑️ Suppr.</button>
-              </div>
-            </div>
-          )}
-        </div>
-      ))}
+            ))}
+          </div>
+        ));
+      })()}
     </div>
   );
 }

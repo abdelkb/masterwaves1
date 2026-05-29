@@ -144,31 +144,50 @@ function MenuPage({ restaurantId, cart, setCart, onCartClick }) {
 
   const total = cart.items.reduce((s, i) => s + i.product.price * i.quantity, 0);
 
+  // Grouper les produits par catégorie
+  const catMap = {};
+  for (const p of data.products) {
+    const cat = data.categories.find((c) => c.id === p.category_id);
+    const key = cat ? cat.id : 0;
+    const label = cat ? cat.name : 'Autres';
+    if (!catMap[key]) catMap[key] = { label, products: [] };
+    catMap[key].products.push(p);
+  }
+  const groups = Object.values(catMap);
+
+  function ProductCard({ p }) {
+    const inCart = cart.items.find((i) => i.product.id === p.id);
+    return (
+      <div style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: '700' }}>{p.name}</div>
+          <div style={{ color: '#666', fontSize: 14 }}>{p.description}</div>
+          <div style={{ fontWeight: '700', color: '#1a1a2e', marginTop: 4 }}>{p.price} DH</div>
+        </div>
+        {p.in_stock ? (
+          inCart ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button style={qtyBtn} onClick={() => dec(p.id)}>−</button>
+              <span style={{ fontWeight: '700', fontSize: 18 }}>{inCart.quantity}</span>
+              <button style={qtyBtn} onClick={() => addToCart(p)}>+</button>
+            </div>
+          ) : <button style={btn} onClick={() => addToCart(p)}>+ Ajouter</button>
+        ) : <span style={{ color: '#e94560', fontSize: 13 }}>Rupture</span>}
+      </div>
+    );
+  }
+
   return (
     <div>
       <h2 style={{ margin: '0 0 4px' }}>{data.restaurant.name}</h2>
       <p style={{ color: '#666', marginTop: 0 }}>{data.restaurant.description}</p>
-      {data.products.map((p) => {
-        const inCart = cart.items.find((i) => i.product.id === p.id);
-        return (
-          <div key={p.id} style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: '700' }}>{p.name}</div>
-              <div style={{ color: '#666', fontSize: 14 }}>{p.description}</div>
-              <div style={{ fontWeight: '700', color: '#1a1a2e', marginTop: 4 }}>{p.price} DH</div>
-            </div>
-            {p.in_stock ? (
-              inCart ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <button style={qtyBtn} onClick={() => dec(p.id)}>−</button>
-                  <span style={{ fontWeight: '700', fontSize: 18 }}>{inCart.quantity}</span>
-                  <button style={qtyBtn} onClick={() => addToCart(p)}>+</button>
-                </div>
-              ) : <button style={btn} onClick={() => addToCart(p)}>+ Ajouter</button>
-            ) : <span style={{ color: '#e94560', fontSize: 13 }}>Rupture</span>}
-          </div>
-        );
-      })}
+      {groups.length === 0 && <p style={{ color: '#888' }}>Menu non disponible pour le moment.</p>}
+      {groups.map((g) => (
+        <div key={g.label}>
+          <h3 style={{ margin: '20px 0 8px', color: '#1a1a2e', borderBottom: '2px solid #e94560', paddingBottom: 6, display: 'inline-block' }}>{g.label}</h3>
+          {g.products.map((p) => <ProductCard key={p.id} p={p} />)}
+        </div>
+      ))}
       {cart.items.length > 0 && (
         <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: 760 }}>
           <button onClick={onCartClick} style={{ ...btn, width: '100%', display: 'flex', justifyContent: 'space-between', fontSize: 16, padding: '16px 20px', background: '#e94560' }}>
