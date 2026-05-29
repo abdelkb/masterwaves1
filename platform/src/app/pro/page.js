@@ -361,6 +361,10 @@ function DriversPage() {
   const [form, setForm] = useState({ full_name: '', email: '', phone: '', password: '' });
   const [success, setSuccess] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [resetId, setResetId] = useState(null);
+  const [newPwd, setNewPwd] = useState('');
 
   const load = useCallback(() => { api('/drivers').then((d) => setDrivers(d.drivers)).catch(() => {}); }, []);
   useEffect(() => { load(); }, [load]);
@@ -379,6 +383,22 @@ function DriversPage() {
   async function toggle(d) {
     try { await api(`/drivers/${d.id}`, { method: 'PATCH', body: { is_active: d.is_active ? 0 : 1 } }); load(); }
     catch (e) { alert(e.message); }
+  }
+
+  async function saveEdit(d) {
+    try {
+      await api(`/drivers/${d.id}`, { method: 'PATCH', body: { full_name: editForm.full_name, phone: editForm.phone } });
+      setEditId(null); setSuccess('✅ Informations mises à jour'); load();
+    } catch (e) { alert(e.message); }
+  }
+
+  async function resetPassword(d) {
+    if (!newPwd.trim()) { alert('Entrez un nouveau mot de passe'); return; }
+    try {
+      await api('/admin/reset-password', { method: 'POST', body: { email: d.email, new_password: newPwd } });
+      setSuccess(`✅ Mot de passe réinitialisé pour ${d.full_name}`);
+      setResetId(null); setNewPwd('');
+    } catch (e) { alert(e.message); }
   }
 
   return (
@@ -409,19 +429,50 @@ function DriversPage() {
       )}
 
       {drivers.map((d) => (
-        <div key={d.id} style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <strong>{d.full_name}</strong>
-            <span style={{ marginLeft: 8, fontSize: 12, color: d.is_active ? '#0a7' : '#e94560', fontWeight: '700' }}>
-              {d.is_active ? '● Actif' : '● Inactif'}
-            </span>
-            <div style={{ color: '#666', fontSize: 14 }}>{d.email} {d.phone ? `· ${d.phone}` : ''}</div>
-            <div style={{ color: '#888', fontSize: 13 }}>{d.active_orders} livraison(s) en cours</div>
-          </div>
-          <button onClick={() => toggle(d)}
-            style={{ ...btnOutline, color: d.is_active ? '#e94560' : '#0a7', borderColor: d.is_active ? '#e94560' : '#0a7' }}>
-            {d.is_active ? 'Désactiver' : 'Activer'}
-          </button>
+        <div key={d.id} style={card}>
+          {editId === d.id ? (
+            <div>
+              <h4 style={{ marginTop: 0 }}>Modifier {d.full_name}</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div><label style={lbl}>Nom complet</label><input style={inp} value={editForm.full_name} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} /></div>
+                <div><label style={lbl}>Téléphone</label><input style={inp} value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} /></div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button style={btn} onClick={() => saveEdit(d)}>💾 Sauvegarder</button>
+                <button style={btnOutline} onClick={() => setEditId(null)}>Annuler</button>
+              </div>
+            </div>
+          ) : resetId === d.id ? (
+            <div>
+              <h4 style={{ marginTop: 0 }}>🔑 Réinitialiser le mot de passe de {d.full_name}</h4>
+              <input style={inp} type="password" placeholder="Nouveau mot de passe *" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button style={btn} onClick={() => resetPassword(d)}>Confirmer</button>
+                <button style={btnOutline} onClick={() => { setResetId(null); setNewPwd(''); }}>Annuler</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <div>
+                <strong>{d.full_name}</strong>
+                <span style={{ marginLeft: 8, fontSize: 12, color: d.is_active ? '#0a7' : '#e94560', fontWeight: '700' }}>
+                  {d.is_active ? '● Actif' : '● Inactif'}
+                </span>
+                <div style={{ color: '#666', fontSize: 14 }}>{d.email} {d.phone ? `· ${d.phone}` : ''}</div>
+                <div style={{ color: '#888', fontSize: 13 }}>{d.active_orders} livraison(s) en cours</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button onClick={() => { setEditId(d.id); setEditForm({ full_name: d.full_name, phone: d.phone || '' }); }}
+                  style={{ ...btnOutline, padding: '7px 12px', fontSize: 13 }}>✏️ Modifier</button>
+                <button onClick={() => { setResetId(d.id); setNewPwd(''); }}
+                  style={{ ...btnOutline, padding: '7px 12px', fontSize: 13 }}>🔑 MDP</button>
+                <button onClick={() => toggle(d)}
+                  style={{ ...btnOutline, padding: '7px 12px', fontSize: 13, color: d.is_active ? '#e94560' : '#0a7', borderColor: d.is_active ? '#e94560' : '#0a7' }}>
+                  {d.is_active ? 'Désactiver' : 'Activer'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       ))}
       {!drivers.length && <p style={{ color: '#888' }}>Aucun livreur. Ajoutez-en un ci-dessus.</p>}
