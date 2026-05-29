@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Master Waves",
+    "slug": "masterwaves-client",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": { "backgroundColor": "#1a1a2e" },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Pour utiliser votre position de livraison et suivre votre commande."
+      }
+    },
+    "android": {
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
+      "config": {
+        "googleMaps": { "apiKey": "VOTRE_CLE_GOOGLE_MAPS" }
+      }
+    },
+    "extra": {
+      "apiBaseUrl": "http://10.0.2.2:3000/api",
+      "pusherKey": "",
+      "pusherCluster": "eu"
+    }
+  }
+}

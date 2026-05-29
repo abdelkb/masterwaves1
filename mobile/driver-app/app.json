@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Master Waves Pro",
+    "slug": "masterwaves-driver",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": { "backgroundColor": "#1a1a2e" },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Pour partager votre position pendant les livraisons.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Pour partager votre position en arrière-plan pendant les livraisons.",
+        "UIBackgroundModes": ["location"]
+      }
+    },
+    "android": {
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE"],
+      "config": {
+        "googleMaps": { "apiKey": "VOTRE_CLE_GOOGLE_MAPS" }
+      }
+    },
+    "extra": {
+      "apiBaseUrl": "http://10.0.2.2:3000/api"
+    }
+  }
+}
