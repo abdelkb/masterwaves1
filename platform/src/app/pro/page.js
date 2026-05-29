@@ -434,6 +434,7 @@ function DriversPage() {
 // ─────────────────────────────────────────────
 function PartnersPage() {
   const [partners, setPartners] = useState([]);
+  const [selected, setSelected] = useState(null); // partenaire en cours de gestion
   const [form, setForm] = useState({ restaurant_name: '', full_name: '', email: '', phone: '', password: '', restaurant_phone: '', restaurant_address: '' });
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
@@ -446,7 +447,7 @@ function PartnersPage() {
     e.preventDefault(); setError(''); setSuccess('');
     try {
       await api('/admin/partners', { method: 'POST', body: form });
-      setSuccess(`✅ Compte créé pour ${form.restaurant_name} · Email : ${form.email} · MDP : ${form.password}`);
+      setSuccess(`✅ Compte créé · Email : ${form.email} · MDP : ${form.password}`);
       setForm({ restaurant_name: '', full_name: '', email: '', phone: '', password: '', restaurant_phone: '', restaurant_address: '' });
       setShowForm(false); load();
     } catch (e) { setError(e.message); }
@@ -455,11 +456,18 @@ function PartnersPage() {
   async function resetPassword(email) {
     const pwd = prompt(`Nouveau mot de passe pour ${email} :`);
     if (!pwd) return;
-    try {
-      await api('/admin/reset-password', { method: 'POST', body: { email, new_password: pwd } });
-      alert('✅ Mot de passe mis à jour');
-    } catch (e) { alert(e.message); }
+    try { await api('/admin/reset-password', { method: 'POST', body: { email, new_password: pwd } }); alert('✅ Mot de passe mis à jour'); }
+    catch (e) { alert(e.message); }
   }
+
+  // Si un partenaire est sélectionné → vue détaillée
+  if (selected) return (
+    <PartnerDetail
+      partner={selected}
+      onBack={() => { setSelected(null); load(); }}
+      onResetPassword={resetPassword}
+    />
+  );
 
   return (
     <div>
@@ -492,8 +500,8 @@ function PartnersPage() {
       )}
 
       {partners.map((p) => (
-        <div key={p.id} style={card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+        <div key={p.id} style={{ ...card, cursor: 'pointer' }} onClick={() => setSelected(p)}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <div>
               <strong style={{ fontSize: 16 }}>{p.restaurant_name || '—'}</strong>
               <span style={{ marginLeft: 8, fontSize: 12, color: p.restaurant_status === 'active' ? '#0a7' : '#e94560', fontWeight: '700' }}>
@@ -502,13 +510,242 @@ function PartnersPage() {
               <div style={{ color: '#666', fontSize: 14, marginTop: 4 }}>👤 {p.full_name} · 📧 {p.email}</div>
               {p.address && <div style={{ color: '#888', fontSize: 13 }}>📍 {p.address}</div>}
             </div>
-            <button style={{ ...btnOutline, fontSize: 13, padding: '6px 12px' }} onClick={() => resetPassword(p.email)}>
-              🔑 Réinitialiser MDP
-            </button>
+            <span style={{ color: '#888', fontSize: 13 }}>Gérer →</span>
           </div>
         </div>
       ))}
       {!partners.length && <p style={{ color: '#888' }}>Aucun partenaire. Ajoutez-en un ci-dessus.</p>}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// DÉTAIL PARTENAIRE — infos + produits + CSV
+// ─────────────────────────────────────────────
+function PartnerDetail({ partner, onBack, onResetPassword }) {
+  const [tab, setTab] = useState('info');
+  const [resto, setResto] = useState(null);
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+
+  const load = useCallback(async () => {
+    if (!partner.restaurant_id) return;
+    const d = await api(`/restaurants/${partner.restaurant_id}`);
+    setResto(d.restaurant);
+    setProducts(d.products);
+    setCategories(d.categories);
+  }, [partner.restaurant_id]);
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div>
+      <button onClick={onBack} style={{ ...btnOutline, marginBottom: 16 }}>← Retour aux partenaires</button>
+      <h2 style={{ margin: '0 0 4px' }}>{partner.restaurant_name}</h2>
+      <p style={{ color: '#888', marginTop: 0 }}>📧 {partner.email}</p>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+        {[['info', '⚙️ Infos'], ['products', '🍕 Produits'], ['csv', '📄 Import CSV']].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ ...btnOutline, background: tab === k ? '#1a1a2e' : '#fff', color: tab === k ? '#fff' : '#1a1a2e' }}>{l}</button>
+        ))}
+        <button style={{ ...btnOutline, borderColor: '#888', color: '#888' }} onClick={() => onResetPassword(partner.email)}>🔑 Réinitialiser MDP</button>
+      </div>
+
+      {tab === 'info'     && resto && <RestaurantInfoForm resto={resto} onSaved={load} />}
+      {tab === 'products' && <ProductsManager restaurantId={partner.restaurant_id} products={products} categories={categories} onRefresh={load} />}
+      {tab === 'csv'      && <CsvImport restaurantId={partner.restaurant_id} onImported={load} />}
+    </div>
+  );
+}
+
+// ─── Formulaire infos restaurant ───
+function RestaurantInfoForm({ resto, onSaved }) {
+  const [form, setForm] = useState({ name: resto.name, description: resto.description || '', phone: resto.phone || '', address: resto.address || '', logo_url: resto.logo_url || '', is_open: resto.is_open });
+  const [msg, setMsg] = useState('');
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  async function save(e) {
+    e.preventDefault(); setMsg('');
+    try { await api(`/restaurants/${resto.id}`, { method: 'PATCH', body: form }); setMsg('✅ Informations mises à jour'); onSaved(); }
+    catch (e) { setMsg('❌ ' + e.message); }
+  }
+  return (
+    <div style={card}>
+      <h3 style={{ marginTop: 0 }}>Informations du restaurant</h3>
+      {msg && <div style={{ padding: 10, borderRadius: 8, background: msg.startsWith('✅') ? '#f0fff8' : '#fff0f0', color: msg.startsWith('✅') ? '#0a7' : '#e94560', marginBottom: 12 }}>{msg}</div>}
+      <form onSubmit={save}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div><label style={lbl}>Nom *</label><input style={inp} value={form.name} onChange={set('name')} required /></div>
+          <div><label style={lbl}>Téléphone</label><input style={inp} value={form.phone} onChange={set('phone')} /></div>
+          <div style={{ gridColumn: '1/-1' }}><label style={lbl}>Description</label><textarea style={{ ...inp, height: 70 }} value={form.description} onChange={set('description')} /></div>
+          <div style={{ gridColumn: '1/-1' }}><label style={lbl}>Adresse</label><input style={inp} value={form.address} onChange={set('address')} /></div>
+          <div style={{ gridColumn: '1/-1' }}><label style={lbl}>URL du logo</label><input style={inp} placeholder="https://..." value={form.logo_url} onChange={set('logo_url')} /></div>
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!form.is_open} onChange={(e) => setForm({ ...form, is_open: e.target.checked ? 1 : 0 })} />
+          <span style={{ fontWeight: '600' }}>Restaurant ouvert</span>
+        </label>
+        <button style={btn} type="submit">Enregistrer</button>
+      </form>
+    </div>
+  );
+}
+
+// ─── Gestion produits ───
+function ProductsManager({ restaurantId, products, categories, onRefresh }) {
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [newForm, setNewForm] = useState({ name: '', price: '', description: '', category_id: '' });
+  const [showNew, setShowNew] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  async function addProduct(e) {
+    e.preventDefault(); setMsg('');
+    try {
+      await api('/products', { method: 'POST', body: { restaurant_id: restaurantId, name: newForm.name, price: parseFloat(newForm.price), description: newForm.description, category_id: newForm.category_id || null } });
+      setNewForm({ name: '', price: '', description: '', category_id: '' });
+      setShowNew(false); setMsg('✅ Produit ajouté'); onRefresh();
+    } catch (e) { setMsg('❌ ' + e.message); }
+  }
+
+  async function saveEdit(id) {
+    try { await api(`/products/${id}`, { method: 'PATCH', body: editForm }); setEditId(null); setMsg('✅ Produit mis à jour'); onRefresh(); }
+    catch (e) { setMsg('❌ ' + e.message); }
+  }
+
+  async function deleteProduct(id, name) {
+    if (!confirm(`Supprimer "${name}" ?`)) return;
+    try { await api(`/products/${id}`, { method: 'DELETE' }); setMsg('✅ Produit supprimé'); onRefresh(); }
+    catch (e) { setMsg('❌ ' + e.message); }
+  }
+
+  async function toggleStock(p) {
+    try { await api(`/products/${p.id}`, { method: 'PATCH', body: { in_stock: p.in_stock ? 0 : 1 } }); onRefresh(); }
+    catch (e) { alert(e.message); }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <h3 style={{ margin: 0 }}>Produits ({products.length})</h3>
+        <button style={btn} onClick={() => setShowNew(!showNew)}>+ Ajouter</button>
+      </div>
+      {msg && <div style={{ padding: 10, borderRadius: 8, background: msg.startsWith('✅') ? '#f0fff8' : '#fff0f0', color: msg.startsWith('✅') ? '#0a7' : '#e94560', marginBottom: 12 }}>{msg}</div>}
+
+      {showNew && (
+        <div style={card}>
+          <h4 style={{ marginTop: 0 }}>Nouveau produit</h4>
+          <form onSubmit={addProduct}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div><label style={lbl}>Nom *</label><input style={inp} value={newForm.name} onChange={(e) => setNewForm({ ...newForm, name: e.target.value })} required /></div>
+              <div><label style={lbl}>Prix (DH) *</label><input style={inp} type="number" step="0.5" value={newForm.price} onChange={(e) => setNewForm({ ...newForm, price: e.target.value })} required /></div>
+              <div style={{ gridColumn: '1/-1' }}><label style={lbl}>Description</label><input style={inp} value={newForm.description} onChange={(e) => setNewForm({ ...newForm, description: e.target.value })} /></div>
+              <div>
+                <label style={lbl}>Catégorie</label>
+                <select style={inp} value={newForm.category_id} onChange={(e) => setNewForm({ ...newForm, category_id: e.target.value })}>
+                  <option value="">— Sans catégorie —</option>
+                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button style={btn} type="submit">Ajouter</button>
+              <button style={btnOutline} type="button" onClick={() => setShowNew(false)}>Annuler</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {products.length === 0 && <p style={{ color: '#888' }}>Aucun produit. Ajoutez-en un ou importez un CSV.</p>}
+
+      {products.map((p) => (
+        <div key={p.id} style={{ ...card, marginBottom: 8 }}>
+          {editId === p.id ? (
+            // Mode édition
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div><label style={lbl}>Nom</label><input style={inp} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></div>
+                <div><label style={lbl}>Prix (DH)</label><input style={inp} type="number" step="0.5" value={editForm.price} onChange={(e) => setEditForm({ ...editForm, price: e.target.value })} /></div>
+                <div style={{ gridColumn: '1/-1' }}><label style={lbl}>Description</label><input style={inp} value={editForm.description || ''} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} /></div>
+                <div>
+                  <label style={lbl}>Catégorie</label>
+                  <select style={inp} value={editForm.category_id || ''} onChange={(e) => setEditForm({ ...editForm, category_id: e.target.value || null })}>
+                    <option value="">— Sans catégorie —</option>
+                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button style={btn} onClick={() => saveEdit(p.id)}>💾 Sauvegarder</button>
+                <button style={btnOutline} onClick={() => setEditId(null)}>Annuler</button>
+              </div>
+            </div>
+          ) : (
+            // Mode affichage
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <div>
+                <strong>{p.name}</strong>
+                {!p.in_stock && <span style={{ marginLeft: 8, color: '#e94560', fontSize: 12, fontWeight: '700' }}>RUPTURE</span>}
+                <div style={{ color: '#666', fontSize: 14 }}>{p.description}</div>
+                <div style={{ fontWeight: '700', color: '#1a1a2e' }}>{p.price} DH</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button style={{ ...btnOutline, padding: '6px 12px', fontSize: 13 }} onClick={() => { setEditId(p.id); setEditForm({ name: p.name, price: p.price, description: p.description, category_id: p.category_id }); }}>✏️ Modifier</button>
+                <button style={{ ...btnOutline, padding: '6px 12px', fontSize: 13, color: p.in_stock ? '#e94560' : '#0a7', borderColor: p.in_stock ? '#e94560' : '#0a7' }} onClick={() => toggleStock(p)}>
+                  {p.in_stock ? '⛔ Rupture' : '✅ Réactiver'}
+                </button>
+                <button style={{ ...btnOutline, padding: '6px 12px', fontSize: 13, color: '#e94560', borderColor: '#e94560' }} onClick={() => deleteProduct(p.id, p.name)}>🗑️ Suppr.</button>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Import CSV ───
+function CsvImport({ restaurantId, onImported }) {
+  const [csv, setCsv] = useState('name,description,price,category\nPizza Reine,Champignons jambon tomate,65,Pizzas\nCoca-Cola 33cl,Canette,10,Boissons');
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  function onFile(e) {
+    const f = e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => setCsv(reader.result);
+    reader.readAsText(f);
+  }
+
+  async function importNow() {
+    setLoading(true); setResult(null);
+    try { const r = await api('/products/import', { method: 'POST', body: { restaurant_id: restaurantId, csv } }); setResult(r); onImported(); }
+    catch (e) { setResult({ error: e.message }); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div style={card}>
+      <h3 style={{ marginTop: 0 }}>📄 Import de produits par CSV</h3>
+      <p style={{ color: '#666', fontSize: 14 }}>
+        Colonnes requises : <code>name, description, price, category</code><br />
+        La 1ère ligne = en-têtes. Les catégories manquantes sont créées automatiquement.
+      </p>
+      <input type="file" accept=".csv,.txt" onChange={onFile} style={{ marginBottom: 10 }} />
+      <textarea
+        value={csv}
+        onChange={(e) => setCsv(e.target.value)}
+        rows={8}
+        style={{ display: 'block', width: '100%', fontFamily: 'monospace', fontSize: 13, padding: 12, borderRadius: 10, border: '1px solid #ddd', boxSizing: 'border-box', marginBottom: 12 }}
+      />
+      <button style={btn} onClick={importNow} disabled={loading}>{loading ? 'Import en cours…' : 'Importer les produits'}</button>
+      {result && !result.error && (
+        <div style={{ marginTop: 12, color: '#0a7', background: '#f0fff8', padding: 12, borderRadius: 10 }}>
+          ✅ {result.imported} produit(s) importé(s) avec succès.
+          {result.errors?.length > 0 && <ul style={{ color: '#e94560', marginTop: 8 }}>{result.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>}
+        </div>
+      )}
+      {result?.error && <div style={{ marginTop: 12, color: '#e94560' }}>❌ {result.error}</div>}
     </div>
   );
 }
