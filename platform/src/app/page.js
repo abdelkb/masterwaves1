@@ -14,6 +14,20 @@ export default function Home() {
       </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginTop: 36 }}>
+        <Link href="/order" style={card}>
+          <div style={{ fontSize: 30 }}>🛒</div>
+          <h2 style={{ margin: '10px 0 4px' }}>Commander</h2>
+          <p style={{ color: '#666', margin: 0 }}>
+            Clients : parcourez les restaurants, commandez et suivez votre livraison en temps réel.
+          </p>
+        </Link>
+        <Link href="/pro" style={card}>
+          <div style={{ fontSize: 30 }}>🛵</div>
+          <h2 style={{ margin: '10px 0 4px' }}>Espace Pro</h2>
+          <p style={{ color: '#666', margin: 0 }}>
+            Gérant & livreurs : dispatch des commandes, gestion des livraisons.
+          </p>
+        </Link>
         <Link href="/partner" style={card}>
           <div style={{ fontSize: 30 }}>🍽️</div>
           <h2 style={{ margin: '10px 0 4px' }}>Portail Partenaire</h2>
@@ -25,17 +39,9 @@ export default function Home() {
           <div style={{ fontSize: 30 }}>🛡️</div>
           <h2 style={{ margin: '10px 0 4px' }}>Administration</h2>
           <p style={{ color: '#666', margin: 0 }}>
-            Super admin : gestion des restaurants partenaires et statistiques.
+            Super admin : gestion des restaurants partenaires.
           </p>
         </Link>
-      </div>
-
-      <div style={{ marginTop: 40, padding: 20, background: '#fff', borderRadius: 12, border: '1px solid #eee' }}>
-        <h3 style={{ marginTop: 0 }}>📱 Applications mobiles</h3>
-        <p style={{ color: '#666', margin: 0 }}>
-          Les applications <strong>Client</strong> et <strong>Livreur / Gérant</strong> sont des
-          apps mobiles (React Native / Expo) — voir le dossier <code>mobile/</code>.
-        </p>
       </div>
     </main>
   );
