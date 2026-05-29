@@ -147,7 +147,7 @@ function MenuPage({ restaurantId, cart, setCart, onCartClick }) {
   // Grouper les produits par catégorie
   const catMap = {};
   for (const p of data.products) {
-    const cat = data.categories.find((c) => c.id === p.category_id);
+    const cat = data.categories.find((c) => Number(c.id) === Number(p.category_id));
     const key = cat ? cat.id : 0;
     const label = cat ? cat.name : 'Autres';
     if (!catMap[key]) catMap[key] = { label, products: [] };

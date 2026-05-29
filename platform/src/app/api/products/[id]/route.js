@@ -26,7 +26,10 @@ export async function PATCH(req, { params }) {
   const updates = [];
   const args = [];
   for (const f of fields) {
-    if (body[f] !== undefined) { updates.push(`${f} = ?`); args.push(body[f]); }
+    if (body[f] !== undefined) {
+      updates.push(`${f} = ?`);
+      args.push(f === 'category_id' && body[f] ? Number(body[f]) : body[f]);
+    }
   }
   if (!updates.length) return err('Aucune donnée');
   updates.push(`updated_at = datetime('now')`);

@@ -756,15 +756,20 @@ function ProductsManager({ restaurantId, products, categories, onRefresh }) {
       {showNew && (
         <div style={card}>
           <h4 style={{ marginTop: 0 }}>Nouveau produit</h4>
+          {categories.length === 0 && (
+            <div style={{ background: '#fff8e1', border: '1px solid #ffc107', borderRadius: 8, padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#7a5f00' }}>
+              ⚠️ Aucune catégorie créée. Allez d'abord dans l'onglet <strong>🗂️ Catégories</strong> pour en ajouter.
+            </div>
+          )}
           <form onSubmit={addProduct}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <div><label style={lbl}>Nom *</label><input style={inp} value={newForm.name} onChange={(e) => setNewForm({ ...newForm, name: e.target.value })} required /></div>
               <div><label style={lbl}>Prix (DH) *</label><input style={inp} type="number" step="0.5" value={newForm.price} onChange={(e) => setNewForm({ ...newForm, price: e.target.value })} required /></div>
               <div style={{ gridColumn: '1/-1' }}><label style={lbl}>Description</label><input style={inp} value={newForm.description} onChange={(e) => setNewForm({ ...newForm, description: e.target.value })} /></div>
               <div>
-                <label style={lbl}>Catégorie</label>
-                <select style={inp} value={newForm.category_id} onChange={(e) => setNewForm({ ...newForm, category_id: e.target.value })}>
-                  <option value="">— Sans catégorie —</option>
+                <label style={lbl}>Catégorie *</label>
+                <select style={{ ...inp, borderColor: !newForm.category_id ? '#ffc107' : '#ddd' }} value={newForm.category_id} onChange={(e) => setNewForm({ ...newForm, category_id: e.target.value })} required>
+                  <option value="">— Choisir une catégorie —</option>
                   {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
@@ -782,7 +787,7 @@ function ProductsManager({ restaurantId, products, categories, onRefresh }) {
       {(() => {
         const catMap = {};
         for (const p of products) {
-          const cat = categories.find((c) => c.id === p.category_id);
+          const cat = categories.find((c) => Number(c.id) === Number(p.category_id));
           const key = cat ? cat.id : 0;
           const label = cat ? cat.name : 'Sans catégorie';
           if (!catMap[key]) catMap[key] = { label, items: [] };

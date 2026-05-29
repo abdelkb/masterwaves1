@@ -37,7 +37,7 @@ export async function POST(req) {
   const res = await run(
     `INSERT INTO products (restaurant_id, category_id, name, description, price, image_url, in_stock)
      VALUES (?,?,?,?,?,?,?)`,
-    [rid, body.category_id || null, body.name, body.description || null,
+    [rid, body.category_id ? Number(body.category_id) : null, body.name, body.description || null,
      body.price, body.image_url || null, body.in_stock ?? 1]
   );
   return ok({ id: Number(res.lastInsertRowid) }, 201);
