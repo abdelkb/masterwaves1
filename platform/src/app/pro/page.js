@@ -378,9 +378,18 @@ function DriversPage() {
   const [editForm, setEditForm] = useState({});
   const [resetId, setResetId] = useState(null);
   const [newPwd, setNewPwd] = useState('');
+  const [mapDriver, setMapDriver] = useState(null); // { id, name, lat, lng }
+  const [locations, setLocations] = useState({});
 
   const load = useCallback(() => { api('/drivers').then((d) => setDrivers(d.drivers)).catch(() => {}); }, []);
-  useEffect(() => { load(); }, [load]);
+  const loadLocations = useCallback(() => {
+    api('/drivers/location').then((d) => {
+      const map = {};
+      for (const l of d.locations) map[l.driver_id] = l;
+      setLocations(map);
+    }).catch(() => {});
+  }, []);
+  useEffect(() => { load(); loadLocations(); const t = setInterval(loadLocations, 10000); return () => clearInterval(t); }, [load, loadLocations]);
 
   async function create(e) {
     e.preventDefault();
@@ -475,6 +484,10 @@ function DriversPage() {
                 <div style={{ color: '#888', fontSize: 13 }}>{d.active_orders} livraison(s) en cours</div>
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {locations[d.id] && (
+                  <button onClick={() => setMapDriver({ ...d, lat: locations[d.id].lat, lng: locations[d.id].lng, updated_at: locations[d.id].updated_at })}
+                    style={{ ...btnOutline, padding: '7px 12px', fontSize: 13, color: '#2d6cdf', borderColor: '#2d6cdf' }}>📍 Voir sur carte</button>
+                )}
                 <button onClick={() => { setEditId(d.id); setEditForm({ full_name: d.full_name, phone: d.phone || '' }); }}
                   style={{ ...btnOutline, padding: '7px 12px', fontSize: 13 }}>✏️ Modifier</button>
                 <button onClick={() => { setResetId(d.id); setNewPwd(''); }}
@@ -489,6 +502,37 @@ function DriversPage() {
         </div>
       ))}
       {!drivers.length && <p style={{ color: '#888' }}>Aucun livreur. Ajoutez-en un ci-dessus.</p>}
+
+      {/* Modale carte livreur */}
+      {mapDriver && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 700, overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,.3)' }}>
+            <div style={{ padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee' }}>
+              <div>
+                <strong style={{ fontSize: 16 }}>📍 {mapDriver.full_name}</strong>
+                <div style={{ color: '#888', fontSize: 13 }}>Dernière position : {mapDriver.updated_at ? new Date(mapDriver.updated_at + 'Z').toLocaleTimeString('fr-FR') : '—'}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <a href={`https://www.google.com/maps?q=${mapDriver.lat},${mapDriver.lng}`} target="_blank" rel="noreferrer"
+                  style={{ ...btnOutline, textDecoration: 'none', padding: '7px 12px', fontSize: 13 }}>Ouvrir Maps ↗</a>
+                <button onClick={() => setMapDriver(null)} style={{ ...btnOutline, padding: '7px 12px', fontSize: 13 }}>✕ Fermer</button>
+              </div>
+            </div>
+            <iframe
+              title="position livreur"
+              width="100%"
+              height="400"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&q=${mapDriver.lat},${mapDriver.lng}&zoom=16`}
+              style={{ display: 'block', border: 'none' }}
+            />
+            <div style={{ padding: '10px 20px', background: '#f8f8f8', fontSize: 13, color: '#888', textAlign: 'center' }}>
+              Lat {Number(mapDriver.lat).toFixed(5)} · Lng {Number(mapDriver.lng).toFixed(5)}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
