@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api, saveSession, getUser, logout } from '@/lib/apiClient';
 
 const STATUS_LABELS = {
@@ -342,60 +342,246 @@ function OrdersPage({ onTrack }) {
 // ---------- SUIVI COMMANDE ----------
 function TrackPage({ orderId, onBack }) {
   const [data, setData] = useState(null);
-  const load = useCallback(() => { api(`/orders/${orderId}`).then(setData).catch(() => {}); }, [orderId]);
-  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [load]);
+  const [driverPos, setDriverPos] = useState(null);
+  const [showDetail, setShowDetail] = useState(false);
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const driverMarkerRef = useRef(null);
+  const destMarkerRef = useRef(null);
+  const mapReadyRef = useRef(false);
+
+  const load = useCallback(() => {
+    api(`/orders/${orderId}`).then((d) => {
+      setData(d);
+      if (d.driverLocation?.lat) {
+        setDriverPos({ lat: Number(d.driverLocation.lat), lng: Number(d.driverLocation.lng) });
+      }
+    }).catch(() => {});
+  }, [orderId]);
+
+  useEffect(() => { load(); const t = setInterval(load, 8000); return () => clearInterval(t); }, [load]);
+
+  // Init Google Maps
+  useEffect(() => {
+    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!key || !mapRef.current) return;
+
+    function initMap() {
+      if (mapReadyRef.current) return;
+      const order = data?.order;
+      const center = order?.delivery_lat
+        ? { lat: Number(order.delivery_lat), lng: Number(order.delivery_lng) }
+        : { lat: 33.5731, lng: -7.5898 }; // Casablanca par défaut
+
+      const map = new window.google.maps.Map(mapRef.current, {
+        center,
+        zoom: 14,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+        zoomControl: true,
+        styles: [
+          { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+          { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+          { elementType: 'geometry', stylers: [{ color: '#f5f5f5' }] },
+          { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
+          { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#eeeeee' }] },
+          { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#dadada' }] },
+          { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#c9e8f9' }] },
+        ],
+      });
+
+      // Marqueur destination (maison du client)
+      if (order?.delivery_lat) {
+        destMarkerRef.current = new window.google.maps.Marker({
+          position: { lat: Number(order.delivery_lat), lng: Number(order.delivery_lng) },
+          map,
+          title: 'Votre adresse',
+          icon: {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 12,
+            fillColor: '#1a1a2e',
+            fillOpacity: 1,
+            strokeColor: '#fff',
+            strokeWeight: 3,
+          },
+        });
+        new window.google.maps.InfoWindow({ content: '<div style="font-size:13px;padding:2px 6px">🏠 Votre adresse</div>' })
+          .open(map, destMarkerRef.current);
+      }
+
+      mapInstanceRef.current = map;
+      mapReadyRef.current = true;
+    }
+
+    if (window.google?.maps) { initMap(); return; }
+    if (document.getElementById('gmaps-script')) {
+      const s = document.getElementById('gmaps-script');
+      const prev = s.onload;
+      s.onload = () => { if (prev) prev(); initMap(); };
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'gmaps-script';
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}`;
+    script.async = true;
+    script.onload = initMap;
+    document.head.appendChild(script);
+  }, [data?.order?.id]);
+
+  // Met à jour le marqueur livreur
+  useEffect(() => {
+    if (!mapReadyRef.current || !mapInstanceRef.current || !driverPos) return;
+    const map = mapInstanceRef.current;
+    if (driverMarkerRef.current) {
+      driverMarkerRef.current.setPosition(driverPos);
+    } else {
+      driverMarkerRef.current = new window.google.maps.Marker({
+        position: driverPos,
+        map,
+        title: data?.order?.driver_name || 'Livreur',
+        icon: {
+          path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          scale: 6,
+          fillColor: '#e94560',
+          fillOpacity: 1,
+          strokeColor: '#fff',
+          strokeWeight: 2,
+          rotation: 0,
+        },
+      });
+      new window.google.maps.InfoWindow({ content: `<div style="font-size:13px;padding:2px 6px">🛵 ${data?.order?.driver_name || 'Livreur'}</div>` })
+        .open(map, driverMarkerRef.current);
+    }
+    map.panTo(driverPos);
+  }, [driverPos]);
 
   async function cancel() {
     try { await api(`/orders/${orderId}/cancel`, { method: 'POST', body: {} }); load(); }
     catch (e) { alert(e.message); }
   }
 
-  if (!data) return <p>Chargement…</p>;
+  if (!data) return (
+    <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center', color: '#888' }}>⏳ Chargement…</div>
+    </div>
+  );
+
   const { order, items } = data;
   const stepIndex = STATUS_STEPS.indexOf(order.status);
+  const isActive = ['driver_assigned', 'going_to_restaurant', 'picked_up', 'delivering'].includes(order.status);
+  const isDone = ['delivered', 'cancelled'].includes(order.status);
+
+  const STEP_ICONS = { preparing: '👨‍🍳', driver_assigned: '🛵', going_to_restaurant: '🛵', picked_up: '📦', delivering: '🚗', delivered: '✅' };
 
   return (
-    <div>
-      <button onClick={onBack} style={{ ...btnOutline, marginBottom: 16 }}>← Retour</button>
-      <h2>Commande #{order.id}</h2>
-      <div style={{ ...card, background: '#1a1a2e', color: '#fff' }}>
-        <div style={{ fontSize: 20, fontWeight: '700' }}>{STATUS_LABELS[order.status]}</div>
+    <div style={{ position: 'relative', margin: '0 -16px' }}>
+      {/* ── CARTE PLEIN ÉCRAN ── */}
+      <div style={{ position: 'relative', height: 420, background: '#e8eaed' }}>
+        <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+
+        {!isActive && !driverPos && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8, background: 'rgba(245,246,248,.85)' }}>
+            <div style={{ fontSize: 48 }}>{isDone ? (order.status === 'delivered' ? '✅' : '❌') : '👨‍🍳'}</div>
+            <div style={{ fontWeight: '700', fontSize: 16, color: '#1a1a2e' }}>{STATUS_LABELS[order.status]}</div>
+            {!isDone && <div style={{ color: '#888', fontSize: 14 }}>La carte s'activera quand le livreur sera en route</div>}
+          </div>
+        )}
+
+        {/* Bouton retour flottant */}
+        <button onClick={onBack} style={{ position: 'absolute', top: 12, left: 12, background: '#fff', border: 'none', borderRadius: 12, padding: '8px 14px', fontWeight: '700', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,.15)', fontSize: 14 }}>← Retour</button>
+
+        {/* Badge statut flottant */}
+        <div style={{ position: 'absolute', top: 12, right: 12, background: '#1a1a2e', color: '#fff', borderRadius: 12, padding: '8px 14px', fontWeight: '700', fontSize: 13, boxShadow: '0 2px 8px rgba(0,0,0,.2)' }}>
+          {STATUS_LABELS[order.status]}
+        </div>
       </div>
 
-      {order.status !== 'cancelled' && order.status !== 'pending_restaurant' && (
-        <div style={card}>
-          {STATUS_STEPS.map((s, i) => (
-            <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, opacity: i <= stepIndex ? 1 : 0.3 }}>
-              <span style={{ fontSize: 18 }}>{i <= stepIndex ? '✅' : '⬜'}</span>
-              <span>{STATUS_LABELS[s]}</span>
+      {/* ── PANNEAU BAS style Glovo ── */}
+      <div style={{ background: '#fff', borderRadius: '20px 20px 0 0', marginTop: -16, position: 'relative', zIndex: 10, padding: '20px 16px', minHeight: 260 }}>
+
+        {/* En-tête commande */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+          <div>
+            <div style={{ fontWeight: '800', fontSize: 18 }}>Commande #{order.id}</div>
+            <div style={{ color: '#888', fontSize: 14 }}>{order.restaurant_name}</div>
+          </div>
+          <div style={{ fontWeight: '800', fontSize: 18, color: '#1a1a2e' }}>{order.total} DH</div>
+        </div>
+
+        {/* Barre de progression */}
+        {!isDone && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              {STATUS_STEPS.filter(s => s !== 'cancelled').map((s, i) => (
+                <div key={s} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: i <= stepIndex ? '#e94560' : '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, transition: 'background .3s' }}>
+                    {i <= stepIndex ? (STEP_ICONS[s] || '✓') : <span style={{ color: '#bbb', fontSize: 11 }}>{i + 1}</span>}
+                  </div>
+                  {i < STATUS_STEPS.length - 2 && (
+                    <div style={{ position: 'absolute' }} />
+                  )}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+            <div style={{ position: 'relative', height: 4, background: '#eee', borderRadius: 4, marginBottom: 8 }}>
+              <div style={{ height: '100%', borderRadius: 4, background: '#e94560', width: `${Math.min(100, (stepIndex / (STATUS_STEPS.length - 1)) * 100)}%`, transition: 'width .5s' }} />
+            </div>
+          </div>
+        )}
 
-      {order.driver_name && (
-        <div style={card}>
-          <strong>🛵 Votre livreur</strong>
-          <div>{order.driver_name} · {order.driver_phone || ''}</div>
-        </div>
-      )}
+        {/* Info livreur */}
+        {order.driver_name && (
+          <div style={{ background: '#f8f9fa', borderRadius: 14, padding: '12px 16px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#e94560', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🛵</div>
+              <div>
+                <div style={{ fontWeight: '700' }}>{order.driver_name}</div>
+                <div style={{ color: '#888', fontSize: 13 }}>Votre livreur</div>
+              </div>
+            </div>
+            {order.driver_phone && (
+              <a href={`tel:${order.driver_phone}`} style={{ background: '#1a1a2e', color: '#fff', borderRadius: 10, padding: '8px 14px', textDecoration: 'none', fontWeight: '700', fontSize: 13 }}>📞 Appeler</a>
+            )}
+          </div>
+        )}
 
-      <div style={card}>
-        <strong>Détail</strong>
-        {items.map((it) => <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}><span>{it.quantity}× {it.name}</span><span>{it.unit_price * it.quantity} DH</span></div>)}
-        <div style={{ borderTop: '1px solid #eee', marginTop: 10, paddingTop: 10, fontWeight: '700', display: 'flex', justifyContent: 'space-between' }}>
-          <span>Total</span><span>{order.total} DH</span>
-        </div>
+        {/* Bouton voir détail */}
+        <button onClick={() => setShowDetail(!showDetail)} style={{ width: '100%', background: '#f5f6f8', border: 'none', borderRadius: 12, padding: '12px', cursor: 'pointer', fontWeight: '600', fontSize: 14, color: '#1a1a2e', marginBottom: 12 }}>
+          {showDetail ? '▲ Masquer le détail' : '▼ Voir le détail de la commande'}
+        </button>
+
+        {showDetail && (
+          <div style={{ background: '#f8f9fa', borderRadius: 12, padding: '12px 16px', marginBottom: 12 }}>
+            {items.map((it) => (
+              <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 14 }}>
+                <span>{it.quantity}× {it.name}</span>
+                <span style={{ fontWeight: '700' }}>{it.unit_price * it.quantity} DH</span>
+              </div>
+            ))}
+            <div style={{ borderTop: '1px solid #eee', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between', fontWeight: '700' }}>
+              <span>Total</span><span>{order.total} DH</span>
+            </div>
+            <div style={{ color: '#888', fontSize: 13, marginTop: 6 }}>📍 {order.delivery_address}</div>
+          </div>
+        )}
+
+        {order.status === 'pending_restaurant' && (
+          <button onClick={cancel} style={{ ...btn, background: '#e94560', width: '100%' }}>Annuler la commande</button>
+        )}
+        {isActive && (
+          <p style={{ color: '#888', textAlign: 'center', fontSize: 13, margin: 0 }}>
+            Pour annuler, appelez le service client. ☎️
+          </p>
+        )}
+        {order.status === 'delivered' && (
+          <div style={{ textAlign: 'center', padding: 16 }}>
+            <div style={{ fontSize: 48 }}>🎉</div>
+            <div style={{ fontWeight: '800', fontSize: 18, marginTop: 8 }}>Commande livrée !</div>
+            <div style={{ color: '#888', fontSize: 14 }}>Bon appétit 😋</div>
+          </div>
+        )}
       </div>
-
-      {order.status === 'pending_restaurant' && (
-        <button onClick={cancel} style={{ ...btn, background: '#e94560', width: '100%' }}>Annuler la commande</button>
-      )}
-      {['preparing', 'driver_assigned', 'going_to_restaurant', 'picked_up', 'delivering'].includes(order.status) && (
-        <p style={{ color: '#888', textAlign: 'center', fontSize: 14 }}>
-          Commande en cours — pour annuler, appelez le service. ☎️
-        </p>
-      )}
     </div>
   );
 }
