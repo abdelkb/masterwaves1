@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api, saveSession, getUser, logout } from '@/lib/apiClient';
 
 const STATUS_LABELS = {
@@ -503,35 +503,17 @@ function DriversPage() {
       ))}
       {!drivers.length && <p style={{ color: '#888' }}>Aucun livreur. Ajoutez-en un ci-dessus.</p>}
 
-      {/* Modale carte livreur */}
       {mapDriver && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 16 }}>
-          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 700, overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,.3)' }}>
-            <div style={{ padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee' }}>
-              <div>
-                <strong style={{ fontSize: 16 }}>📍 {mapDriver.full_name}</strong>
-                <div style={{ color: '#888', fontSize: 13 }}>Dernière position : {mapDriver.updated_at ? new Date(mapDriver.updated_at + 'Z').toLocaleTimeString('fr-FR') : '—'}</div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <a href={`https://www.google.com/maps?q=${mapDriver.lat},${mapDriver.lng}`} target="_blank" rel="noreferrer"
-                  style={{ ...btnOutline, textDecoration: 'none', padding: '7px 12px', fontSize: 13 }}>Ouvrir Maps ↗</a>
-                <button onClick={() => setMapDriver(null)} style={{ ...btnOutline, padding: '7px 12px', fontSize: 13 }}>✕ Fermer</button>
-              </div>
-            </div>
-            <iframe
-              title="position livreur"
-              width="100%"
-              height="400"
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&q=${mapDriver.lat},${mapDriver.lng}&zoom=16`}
-              style={{ display: 'block', border: 'none' }}
-            />
-            <div style={{ padding: '10px 20px', background: '#f8f8f8', fontSize: 13, color: '#888', textAlign: 'center' }}>
-              Lat {Number(mapDriver.lat).toFixed(5)} · Lng {Number(mapDriver.lng).toFixed(5)}
-            </div>
-          </div>
-        </div>
+        <DriverMapModal
+          driver={mapDriver}
+          onClose={() => setMapDriver(null)}
+          onRefreshLocation={() => {
+            api('/drivers/location').then((d) => {
+              const loc = d.locations.find((l) => l.driver_id === mapDriver.id);
+              if (loc) setMapDriver((prev) => ({ ...prev, lat: loc.lat, lng: loc.lng, updated_at: loc.updated_at }));
+            }).catch(() => {});
+          }}
+        />
       )}
     </div>
   );
@@ -986,6 +968,157 @@ function DeliveriesPage() {
         );
       })}
       {!orders.length && <p style={{ color: '#888' }}>Aucune livraison assignée pour le moment.</p>}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// CARTE LIVREUR (Google Maps JS API)
+// ─────────────────────────────────────────────
+function DriverMapModal({ driver, onClose, onRefreshLocation }) {
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [lastUpdate, setLastUpdate] = useState(driver.updated_at);
+
+  // Charge le SDK Google Maps
+  useEffect(() => {
+    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!key) { setError('Clé Google Maps manquante'); setLoading(false); return; }
+
+    function initMap() {
+      if (!mapRef.current) return;
+      const pos = { lat: Number(driver.lat), lng: Number(driver.lng) };
+
+      const map = new window.google.maps.Map(mapRef.current, {
+        center: pos,
+        zoom: 16,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+        styles: [
+          { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+          { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+          { elementType: 'geometry', stylers: [{ color: '#f5f5f5' }] },
+          { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
+          { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#eeeeee' }] },
+          { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#dadada' }] },
+          { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#c9e8f9' }] },
+          { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#f5f5f5' }] },
+        ],
+      });
+
+      // Marqueur livreur personnalisé
+      const marker = new window.google.maps.Marker({
+        position: pos,
+        map,
+        title: driver.full_name,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 14,
+          fillColor: '#e94560',
+          fillOpacity: 1,
+          strokeColor: '#fff',
+          strokeWeight: 3,
+        },
+      });
+
+      // Info bubble
+      const infoWindow = new window.google.maps.InfoWindow({
+        content: `<div style="font-family:sans-serif;padding:4px 8px"><strong>🛵 ${driver.full_name}</strong><br><span style="color:#888;font-size:12px">${driver.active_orders || 0} livraison(s) en cours</span></div>`,
+      });
+      infoWindow.open(map, marker);
+      marker.addListener('click', () => infoWindow.open(map, marker));
+
+      mapInstanceRef.current = map;
+      markerRef.current = marker;
+      setLoading(false);
+    }
+
+    if (window.google?.maps) { initMap(); return; }
+
+    const existing = document.getElementById('gmaps-script');
+    if (existing) { existing.onload = initMap; return; }
+
+    const script = document.createElement('script');
+    script.id = 'gmaps-script';
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}`;
+    script.async = true;
+    script.onload = initMap;
+    script.onerror = () => { setError('Impossible de charger Google Maps'); setLoading(false); };
+    document.head.appendChild(script);
+  }, []);
+
+  // Met à jour le marqueur quand la position change
+  useEffect(() => {
+    if (!markerRef.current || !mapInstanceRef.current) return;
+    const pos = { lat: Number(driver.lat), lng: Number(driver.lng) };
+    markerRef.current.setPosition(pos);
+    mapInstanceRef.current.panTo(pos);
+    setLastUpdate(driver.updated_at);
+  }, [driver.lat, driver.lng]);
+
+  // Rafraîchit la position toutes les 10s
+  useEffect(() => {
+    const t = setInterval(onRefreshLocation, 10000);
+    return () => clearInterval(t);
+  }, [onRefreshLocation]);
+
+  const timeStr = lastUpdate
+    ? new Date(lastUpdate.includes('T') ? lastUpdate : lastUpdate + 'Z').toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : '—';
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', flexDirection: 'column' }}>
+      {/* Fond semi-transparent cliquable pour fermer */}
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.55)' }} onClick={onClose} />
+
+      <div style={{ position: 'relative', margin: 'auto', width: '100%', maxWidth: 720, borderRadius: 20, overflow: 'hidden', boxShadow: '0 12px 48px rgba(0,0,0,.4)' }}>
+        {/* Header style Glovo */}
+        <div style={{ background: '#1a1a2e', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 42, height: 42, borderRadius: '50%', background: '#e94560', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🛵</div>
+            <div>
+              <div style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>{driver.full_name}</div>
+              <div style={{ color: '#aaa', fontSize: 12 }}>{driver.email}{driver.phone ? ' · ' + driver.phone : ''}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'rgba(255,255,255,.1)', border: 'none', color: '#fff', borderRadius: 10, padding: '8px 14px', cursor: 'pointer', fontSize: 14, fontWeight: '700' }}>✕</button>
+        </div>
+
+        {/* Carte */}
+        <div style={{ position: 'relative' }}>
+          <div ref={mapRef} style={{ width: '100%', height: 420 }} />
+
+          {loading && (
+            <div style={{ position: 'absolute', inset: 0, background: '#f5f6f8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+              <div style={{ width: 40, height: 40, border: '4px solid #e94560', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+              <p style={{ color: '#888', margin: 0 }}>Chargement de la carte…</p>
+            </div>
+          )}
+          {error && (
+            <div style={{ position: 'absolute', inset: 0, background: '#fff0f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <p style={{ color: '#e94560' }}>❌ {error}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Pied de page */}
+        <div style={{ background: '#fff', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #eee' }}>
+          <div style={{ fontSize: 13, color: '#666' }}>
+            🕐 Mise à jour : <strong>{timeStr}</strong>
+            <span style={{ marginLeft: 12, color: '#888' }}>📌 {Number(driver.lat).toFixed(5)}, {Number(driver.lng).toFixed(5)}</span>
+          </div>
+          <a href={`https://www.google.com/maps?q=${driver.lat},${driver.lng}`} target="_blank" rel="noreferrer"
+            style={{ ...btn, textDecoration: 'none', padding: '8px 14px', fontSize: 13 }}>
+            Ouvrir Maps ↗
+          </a>
+        </div>
+      </div>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
