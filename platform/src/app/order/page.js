@@ -361,21 +361,21 @@ function TrackPage({ orderId, onBack }) {
 
   useEffect(() => { load(); const t = setInterval(load, 8000); return () => clearInterval(t); }, [load]);
 
-  // Init Google Maps
+  // Init Google Maps — se déclenche quand la commande est chargée ET le div est prêt
   useEffect(() => {
-    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!key || !mapRef.current) return;
+    if (!data?.order) return;
+    const GMAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyCJfct3_Gjp-4wISP5CvbJm_3bmXhpXfiI';
 
     function initMap() {
-      if (mapReadyRef.current) return;
-      const order = data?.order;
-      const center = order?.delivery_lat
+      if (mapReadyRef.current || !mapRef.current) return;
+      const order = data.order;
+      const center = order.delivery_lat
         ? { lat: Number(order.delivery_lat), lng: Number(order.delivery_lng) }
-        : { lat: 33.5731, lng: -7.5898 }; // Casablanca par défaut
+        : { lat: 33.5731, lng: -7.5898 };
 
       const map = new window.google.maps.Map(mapRef.current, {
         center,
-        zoom: 14,
+        zoom: 15,
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
@@ -391,8 +391,7 @@ function TrackPage({ orderId, onBack }) {
         ],
       });
 
-      // Marqueur destination (maison du client)
-      if (order?.delivery_lat) {
+      if (order.delivery_lat) {
         destMarkerRef.current = new window.google.maps.Marker({
           position: { lat: Number(order.delivery_lat), lng: Number(order.delivery_lng) },
           map,
@@ -415,18 +414,22 @@ function TrackPage({ orderId, onBack }) {
     }
 
     if (window.google?.maps) { initMap(); return; }
-    if (document.getElementById('gmaps-script')) {
-      const s = document.getElementById('gmaps-script');
-      const prev = s.onload;
-      s.onload = () => { if (prev) prev(); initMap(); };
-      return;
+
+    // Script déjà en cours de chargement — attendre
+    const existing = document.getElementById('gmaps-script');
+    if (existing) {
+      existing.addEventListener('load', initMap);
+      return () => existing.removeEventListener('load', initMap);
     }
+
     const script = document.createElement('script');
     script.id = 'gmaps-script';
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}&callback=Function.prototype`;
     script.async = true;
-    script.onload = initMap;
+    script.defer = true;
+    script.addEventListener('load', initMap);
     document.head.appendChild(script);
+    return () => script.removeEventListener('load', initMap);
   }, [data?.order?.id]);
 
   // Met à jour le marqueur livreur

@@ -985,8 +985,7 @@ function DriverMapModal({ driver, onClose, onRefreshLocation }) {
 
   // Charge le SDK Google Maps
   useEffect(() => {
-    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!key) { setError('Clé Google Maps manquante'); setLoading(false); return; }
+    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyCJfct3_Gjp-4wISP5CvbJm_3bmXhpXfiI';
 
     function initMap() {
       if (!mapRef.current) return;
@@ -1040,15 +1039,20 @@ function DriverMapModal({ driver, onClose, onRefreshLocation }) {
     if (window.google?.maps) { initMap(); return; }
 
     const existing = document.getElementById('gmaps-script');
-    if (existing) { existing.onload = initMap; return; }
+    if (existing) {
+      existing.addEventListener('load', initMap);
+      return () => existing.removeEventListener('load', initMap);
+    }
 
     const script = document.createElement('script');
     script.id = 'gmaps-script';
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&callback=Function.prototype`;
     script.async = true;
-    script.onload = initMap;
-    script.onerror = () => { setError('Impossible de charger Google Maps'); setLoading(false); };
+    script.defer = true;
+    script.addEventListener('load', initMap);
+    script.addEventListener('error', () => { setError('Impossible de charger Google Maps'); setLoading(false); });
     document.head.appendChild(script);
+    return () => script.removeEventListener('load', initMap);
   }, []);
 
   // Met à jour le marqueur quand la position change
