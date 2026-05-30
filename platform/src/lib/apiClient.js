@@ -22,9 +22,10 @@ export function logout() {
 }
 
 export async function api(path, { method = 'GET', body } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
+  if (body) headers['Content-Type'] = 'application/json';
   const res = await fetch(`/api${path}`, {
     method,
     headers,

@@ -2,6 +2,7 @@
   "expo": {
     "name": "Master Waves",
     "slug": "masterwaves-client",
+    "owner": "abdelkb",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -15,12 +16,12 @@
     "android": {
       "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
       "config": {
-        "googleMaps": { "apiKey": "VOTRE_CLE_GOOGLE_MAPS" }
+        "googleMaps": { "apiKey": "AIzaSyCJfct3_Gjp-4wISP5CvbJm_3bmXhpXfiI" }
       }
     },
     "extra": {
-      "apiBaseUrl": "http://10.0.2.2:3000/api",
-      "pusherKey": "",
+      "apiBaseUrl": "https://masterwaves1.vercel.app/api",
+      "pusherKey": "a2f86a3d7f214cc36140",
       "pusherCluster": "eu"
     }
   }
